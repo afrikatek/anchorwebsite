@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500">
+  <defs>
+    <linearGradient id="ph2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#5B564B"></stop>
+      <stop offset="100%" stop-color="#1A1815"></stop>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="500" fill="url(#ph2)"></rect>
+  
+  <g opacity="0.45">
+    <g transform="translate(280, 290)">
+      <ellipse cx="0" cy="-70" rx="42" ry="50" fill="#807A6D"></ellipse>
+      <path d="M -85 180 Q -85 50 0 40 Q 85 50 85 180 Z" fill="#807A6D"></path>
+    </g>
+    <g transform="translate(520, 280)">
+      <ellipse cx="0" cy="-70" rx="44" ry="52" fill="#3F3B33"></ellipse>
+      <path d="M -90 180 Q -90 50 0 40 Q 90 50 90 180 Z" fill="#3F3B33"></path>
+    </g>
+  </g>
+  <text x="40" y="470" font-family="Inter Tight, sans-serif" font-size="11" letter-spacing="0.12em" fill="#B0A99B" opacity="0.5">PLACEHOLDER · TWO-PERSON CONVERSATION</text>
+</svg>

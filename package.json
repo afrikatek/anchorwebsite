@@ -1,0 +1,37 @@
+{
+  "name": "anchor-website",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@next/mdx": "^15.0.3",
+    "@types/mdx": "^2.0.13",
+    "gray-matter": "^4.0.3",
+    "next": "^15.0.3",
+    "next-intl": "^4.13.0",
+    "next-mdx-remote": "^5.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "reading-time": "^1.5.0",
+    "rehype-autolink-headings": "^7.1.0",
+    "rehype-slug": "^6.0.0",
+    "remark-gfm": "^4.0.0",
+    "resend": "^4.0.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vercel/config": "^0.5.3",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^5.6.3"
+  }
+}
