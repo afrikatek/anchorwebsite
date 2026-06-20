@@ -23,7 +23,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
     if (!m) continue;
     const [, key, raw] = m;
     if (process.env[key] !== undefined) continue;
-    process.env[key] = raw.replace(/^"(.*)"$|^'(.*)'$/, (_, a, b) => a ?? b);
+    process.env[key] = raw.replace(/^"(.*)"$|^'(.*)'$/, (_match: string, a?: string, b?: string) => a ?? b ?? '');
   }
 })();
 

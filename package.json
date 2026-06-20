@@ -20,6 +20,7 @@
     "react-router-dom": "^6.30.4"
   },
   "devDependencies": {
+    "@types/node": "^26.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vercel/node": "^5.8.17",
