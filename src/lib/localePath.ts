@@ -15,7 +15,10 @@ export function localePath(path: string, locale: Locale): string {
 }
 
 export function localeFromPathname(pathname: string): Locale {
-  if (pathname === '/fr' || pathname.startsWith('/fr/')) return 'fr';
+  // Normalize: vite-react-ssg passes routePath without a leading slash
+  // (e.g. "fr/about"), while react-router useLocation() always includes one.
+  const p = pathname.startsWith('/') ? pathname : `/${pathname}`;
+  if (p === '/fr' || p.startsWith('/fr/')) return 'fr';
   return 'en';
 }
 

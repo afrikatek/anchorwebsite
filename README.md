@@ -48,10 +48,10 @@ cp .env.local.example .env.local
 
 ```bash
 npm run dev
-# → http://localhost:5173
+# → http://localhost:3000
 ```
 
-Vite serves an SPA in dev — fast HMR, no SSG. The `vite dev` server does **not** run the `api/contact.ts` function, so the contact form will fail with a network error. To exercise the form locally, use `vercel dev` instead (see next section).
+Vite serves an SPA in dev — fast HMR, no SSG. The `vite dev` server does **not** run the `api/contact.ts` function, so the contact form will fail with a network error. To exercise the form locally, stop `npm run dev` and use `vercel dev` instead (it serves on the same port — see next section).
 
 ### Run the dev server *with* the contact API
 
@@ -75,7 +75,7 @@ vercel dev
 
 ### Smoke tests
 
-With the dev server running on `http://localhost:5173`:
+With the dev server running on `http://localhost:3000`:
 
 ```bash
 # Every route should return 200 in both locales
@@ -83,11 +83,11 @@ for path in / /fr /about /fr/about /services /fr/services /contact /fr/contact \
             /insights /fr/insights /classes /fr/classes /capacity /fr/capacity \
             /team /fr/team; do
   printf '%s → ' "$path"
-  curl -s -o /dev/null -w '%{http_code}\n' "http://localhost:5173$path"
+  curl -s -o /dev/null -w '%{http_code}\n' "http://localhost:3000$path"
 done
 ```
 
-To test the contact API (run via `vercel dev` on `:3000`):
+To test the contact API (must be running via `vercel dev` on `:3000`, not `npm run dev`):
 
 ```bash
 # Missing fields → 400 missing_or_invalid_fields
@@ -113,7 +113,7 @@ curl -s -X POST http://localhost:3000/api/contact \
 ```bash
 npm run build
 npm run preview
-# → http://localhost:4173 — serves dist/ as static files
+# → http://localhost:3000 — serves dist/ as static files
 ```
 
 Inspect a few prerendered files:
@@ -135,7 +135,7 @@ All env vars live in `.env.local` (gitignored). Template at `.env.local.example`
 | `RESEND_API_KEY` | ✅ (server) | Resend API key. Get one at https://resend.com/api-keys. |
 | `CONTACT_TO` | ✅ (server) | Inbox that receives form submissions (e.g. `underwriting@anchorrisktransfer.com`). |
 | `CONTACT_FROM` | ✅ (server) | Verified Resend sender, format `"Display Name <site@anchorrisktransfer.com>"`. Domain must be verified in Resend. |
-| `ALLOWED_ORIGIN` | ✅ (server) | Comma-separated origins permitted to POST. Set `http://localhost:5173,http://localhost:3000,https://anchorrisktransfer.com` for full coverage. |
+| `ALLOWED_ORIGIN` | ✅ (server) | Comma-separated origins permitted to POST. Set `http://localhost:3000,https://anchorrisktransfer.com` for full coverage. |
 | `VITE_TURNSTILE_SITE_KEY` | ⚙️ (client) | Cloudflare Turnstile site key. Exposed to the browser by Vite (`VITE_` prefix). Leave blank to hide the widget. |
 | `TURNSTILE_SECRET_KEY` | ⚙️ (server) | Cloudflare Turnstile secret. If set, the API verifies tokens; if blank, verification is skipped. |
 
