@@ -2,15 +2,23 @@
 
 Production website for **Anchor Risk Transfer Private Limited** — a licensed Underwriting Management Agency in Cybercity, Mauritius, serving the African and Indian Ocean reinsurance markets.
 
-Built from the Claude Design high-fidelity prototype. Recreates every page in idiomatic Next.js with maintainable, typed React components.
+Bilingual (English + French), statically pre-rendered, with a serverless contact form.
+
+---
 
 ## Stack
 
-- **Next.js 15** (App Router) + **TypeScript** + **Tailwind CSS**
-- **React 19** (server components for everything except the nav, contact form, and interactive cards)
-- **MDX** for the Insights & News blog (`content/insights/*.mdx`)
-- **Resend** for contact form delivery
-- **Cloudflare Pages** for hosting (edge runtime via `@cloudflare/next-on-pages`)
+- **React 19** + **Vite 7**, pre-rendered to static HTML via **`vite-react-ssg`**
+- **React Router DOM v6** with manually-declared routes (one tree mounted at `/`, the same tree mounted at `/fr/`)
+- **react-i18next** for EN/FR translations (`src/i18n/{en,fr}.json`)
+- **react-helmet-async** for per-page `<title>` and meta
+- Plain CSS with design tokens in `src/styles/globals.css` — no Tailwind, no CSS-in-JS
+- **Markdown** for Insights articles (`src/content/insights/*.md`), parsed with `front-matter` + `marked`
+- **Vercel Functions** (`api/contact.ts`, Node.js runtime) for contact form delivery via **Resend**
+- **Cloudflare Turnstile** bot challenge on the contact form
+- **TypeScript** throughout
+
+This is the same stack used by [`assessprowebsite`](../assessprowebsite), so the two repos share build, deploy, and tooling conventions.
 
 ---
 
@@ -18,334 +26,331 @@ Built from the Claude Design high-fidelity prototype. Recreates every page in id
 
 ### Prerequisites
 
-- **Node.js 20 or 22 LTS** (this project was built on Node 24.16; anything ≥ 20 will work). Check with `node --version`.
+- **Node.js 20+** (developed on 24). Check with `node --version`.
 - **npm** (ships with Node).
-- No database — content is files on disk; submissions go straight to email.
+- **Vercel CLI** — only needed if you want to test the contact-form API locally. Install with `npm i -g vercel`.
 
 ### One-time setup
 
 ```bash
-# 1. Install dependencies (~60 s on a cold cache)
+# 1. Install dependencies (~30 s on a cold cache)
 npm install
 
 # 2. Create your local env file from the template
-cp .env.example .env.local
+cp .env.local.example .env.local
 
 # 3. Fill in .env.local — see "Environment variables" below.
-#    For first-run with no Resend account yet, you can leave RESEND_API_KEY blank;
-#    every other route still works, only the contact form will return a 500.
+#    For dev work that doesn't touch the contact form, you can leave it untouched;
+#    every other route still renders. Only /api/contact will fail.
 ```
 
 ### Run the dev server
 
 ```bash
 npm run dev
-# → http://localhost:3000
+# → http://localhost:5173
 ```
 
-Routes you should hit and what to verify:
+Vite serves an SPA in dev — fast HMR, no SSG. The `vite dev` server does **not** run the `api/contact.ts` function, so the contact form will fail with a network error. To exercise the form locally, use `vercel dev` instead (see next section).
 
-| URL | What to check |
-| --- | --- |
-| `/` | Hero, trust band, about, services (hover cards lift), classes grid (hover scales image), capacity, claims timeline, values, team, insights teaser (reads MDX), contact form section |
-| `/about` | Page hero with breadcrumb + About + Values + Team |
-| `/services` | Services + Claims + Capacity sections |
-| `/classes` | Eight class cards |
-| `/capacity` | Trust band + Capacity feature |
-| `/team` | Team + Values |
-| `/insights` | Featured card (newest MDX post) + recent list + archive grid (if > 5 posts) |
-| `/insights/<slug>` | One per MDX file in `content/insights/`. Article body + related posts + CTA strip |
-| `/contact` | Live form. Submit a test entry; if `RESEND_API_KEY` is set, an email lands in your `CONTACT_TO_EMAIL` inbox |
-| `/some-nonsense` | Branded 404 page |
+### Run the dev server *with* the contact API
+
+```bash
+vercel dev
+# → http://localhost:3000
+#   (Vercel's dev runtime serves the Vite frontend AND the api/ Functions)
+```
+
+`vercel dev` reads `.env.local` automatically. Once it's running, you can submit the contact form end-to-end against your real Resend sandbox.
+
+> First-time `vercel dev` users: it will prompt to link the directory to a Vercel project. Choose the existing `anchor-website` project (or create a new one).
 
 ### Other npm scripts
 
-```bash
-npm run dev          # Next dev server with hot reload
-npm run build        # Production Next.js build (Node runtime — useful for sanity-checking)
-npm run start        # Run the production build (after `npm run build`)
-npm run lint         # Next/ESLint
-npm run pages:build  # Build for Cloudflare Pages (edge output in .vercel/output/static)
-npm run preview      # Run the Cloudflare edge build locally via wrangler
-npm run deploy       # Build + publish to Cloudflare Pages (requires `wrangler login`)
-```
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Vite dev server (SPA, no API routes) |
+| `npm run build` | Pre-render every route to static HTML in `dist/`, then run `scripts/postbuild.mjs` for the `<html lang="fr">` rewrites and `sitemap.xml` |
+| `npm run preview` | Serve `dist/` as a static site for build verification (no API routes; use `vercel dev` after `vercel build` for that) |
 
-### Type-check
+### Smoke tests
+
+With the dev server running on `http://localhost:5173`:
 
 ```bash
-npx tsc --noEmit
-```
-
-Should output nothing. If it does, the offending file and line will be listed.
-
-### Quick smoke test (with the dev server running)
-
-```bash
-# Every route should return 200
-for path in / /about /services /classes /capacity /team /insights /contact; do
-  curl -s -o /dev/null -w "%{http_code} $path\n" "http://localhost:3000$path"
+# Every route should return 200 in both locales
+for path in / /fr /about /fr/about /services /fr/services /contact /fr/contact \
+            /insights /fr/insights /classes /fr/classes /capacity /fr/capacity \
+            /team /fr/team; do
+  printf '%s → ' "$path"
+  curl -s -o /dev/null -w '%{http_code}\n' "http://localhost:5173$path"
 done
+```
 
-# Contact API — validation works without a Resend key
-curl -s -X POST -H "content-type: application/json" \
-  -d '{}' http://localhost:3000/api/contact
-# → {"error":"Required"}
+To test the contact API (run via `vercel dev` on `:3000`):
+
+```bash
+# Missing fields → 400 missing_or_invalid_fields
+curl -s -X POST http://localhost:3000/api/contact \
+  -H 'content-type: application/json' \
+  -d '{}'
+
+# Honeypot tripped → 200 silent accept (no email sent)
+curl -s -X POST http://localhost:3000/api/contact \
+  -H 'content-type: application/json' \
+  -d '{"name":"Bot","company":"Acme","email":"a@b.co","classOfBusiness":"Property","message":"hi","website":"http://spam"}'
+
+# Good payload → 200 + email lands at CONTACT_TO
+curl -s -X POST http://localhost:3000/api/contact \
+  -H 'content-type: application/json' \
+  -d '{"name":"You","company":"Acme","email":"you@example.com","classOfBusiness":"Property","message":"Real test","locale":"en"}'
+```
+
+> If you set `TURNSTILE_SECRET_KEY` locally, the last call will fail with `turnstile_failed` unless you also include a real `cf-turnstile-response` token. Leave `TURNSTILE_SECRET_KEY` blank in `.env.local` to skip verification during local API testing.
+
+### Build + locally verify the production output
+
+```bash
+npm run build
+npm run preview
+# → http://localhost:4173 — serves dist/ as static files
+```
+
+Inspect a few prerendered files:
+
+```bash
+# <html lang> is correct per locale
+grep -oE '<html lang="[a-z]+"' dist/index.html dist/fr.html dist/about.html dist/fr/about.html
+
+# Sitemap was generated
+head -20 dist/sitemap.xml
 ```
 
 ### Environment variables
 
-Defined in `.env.local` for development, in Cloudflare Pages settings for production:
+All env vars live in `.env.local` (gitignored). Template at `.env.local.example`.
 
-| Variable | Required? | What it does | Example |
-| --- | --- | --- | --- |
-| `RESEND_API_KEY` | **Yes** (for the contact form) | Authenticates calls to Resend's API | `re_AbCd1234...` |
-| `CONTACT_TO_EMAIL` | Optional | Inbox that receives contact submissions | `underwriting@anchorrisktransfer.com` (default if unset) |
-| `CONTACT_FROM_EMAIL` | Optional | Sender address — must be on a domain you have **verified in Resend** | `site@anchorrisktransfer.com` (default if unset) |
-
-A `.env.local` file is git-ignored. Never commit secrets.
-
-### Resend setup (one time)
-
-1. Sign up at <https://resend.com>.
-2. Add and verify the `anchorrisktransfer.com` domain (or whichever domain `CONTACT_FROM_EMAIL` will use). Resend will ask you to add DNS records (SPF, DKIM, return-path) at your registrar — those typically propagate in minutes.
-3. Create an API key under **API Keys** → "Sending access". Copy it into `.env.local` as `RESEND_API_KEY`.
-4. While you wait for domain verification, you can test using Resend's sandbox sender `onboarding@resend.dev`. Set `CONTACT_FROM_EMAIL=onboarding@resend.dev` and `CONTACT_TO_EMAIL=<your own address>` — Resend will only deliver to addresses you own from the sandbox, which is fine for local development.
-
-### Authoring a blog post (Insights & News)
-
-The blog reads MDX files at build/render time from `content/insights/`. Filename → URL slug.
-
-Create `content/insights/2027-01-my-new-brief.mdx`:
-
-```mdx
----
-title: Your headline here
-date: 2027-01-15            # YYYY-MM-DD — controls sort order (newest first)
-tag: Property               # Category chip — Property, Regulation, PV&T, Energy, etc.
-excerpt: One-line summary shown on cards.
-hero: cityNight             # Image key from lib/images.ts
-author: Anchor Underwriting Desk
----
-
-# Optional heading (auto-slugged for anchor links)
-
-Markdown / MDX body. Standard markdown works:
-
-- bullet
-- bullet
-
-> Block quotes render as serif pull-quotes in brand styling.
-
-[Links use brand styling automatically.](mailto:underwriting@anchorrisktransfer.com)
-```
-
-Frontmatter fields:
-
-| Field | Required | Notes |
+| Variable | Required | Purpose |
 | --- | --- | --- |
-| `title` | Yes | Used as `<h1>` and `<title>` |
-| `date` | Yes | ISO date — drives sort order |
-| `tag` | Yes | Short category label |
-| `excerpt` | Yes | 1–2 sentence summary, shows on cards and as sub-headline |
-| `hero` | Yes | One of the keys in `lib/images.ts` (Unsplash photo) |
-| `author` | No | Optional byline |
+| `RESEND_API_KEY` | ✅ (server) | Resend API key. Get one at https://resend.com/api-keys. |
+| `CONTACT_TO` | ✅ (server) | Inbox that receives form submissions (e.g. `underwriting@anchorrisktransfer.com`). |
+| `CONTACT_FROM` | ✅ (server) | Verified Resend sender, format `"Display Name <site@anchorrisktransfer.com>"`. Domain must be verified in Resend. |
+| `ALLOWED_ORIGIN` | ✅ (server) | Comma-separated origins permitted to POST. Set `http://localhost:5173,http://localhost:3000,https://anchorrisktransfer.com` for full coverage. |
+| `VITE_TURNSTILE_SITE_KEY` | ⚙️ (client) | Cloudflare Turnstile site key. Exposed to the browser by Vite (`VITE_` prefix). Leave blank to hide the widget. |
+| `TURNSTILE_SECRET_KEY` | ⚙️ (server) | Cloudflare Turnstile secret. If set, the API verifies tokens; if blank, verification is skipped. |
 
-Reading time is computed automatically from the body.
+Get Turnstile keys at https://dash.cloudflare.com → Turnstile → Add site → choose **Managed** challenge.
 
-The newest post becomes the **featured card** on `/insights` and the home page teaser. No commands to run — save the file, refresh.
+> `VITE_` is required for any var that needs to be inlined into the client bundle. Server-only secrets (Resend key, Turnstile secret) must **not** have that prefix.
+
+### Adding a new insight (blog post)
+
+1. Create `src/content/insights/YYYY-MM-<slug>.md`:
+
+   ```markdown
+   ---
+   title: Your headline goes here
+   date: 2026-12-01
+   tag: Property
+   excerpt: One-paragraph teaser that appears on the listing page and as the meta description.
+   hero: property         # any key from src/lib/images.ts
+   author: Anchor Underwriting
+   ---
+
+   ## Section heading
+
+   Body markdown. GitHub-flavoured. `inline code`, **bold**, [links](https://example.com) — all supported.
+
+   > Block quotes render with the navy left border.
+
+   - Lists
+   - Work
+   - Too
+   ```
+
+2. `npm run dev`, navigate to `/insights/YYYY-MM-<slug>` — the article appears immediately (Vite re-globs on save).
+
+3. `npm run build` regenerates the static HTML and includes the new slug in the sitemap. The article is rendered in both `/insights/…` and `/fr/insights/…` (English copy under the French shell — the marketing site is bilingual; long-form articles aren't yet translated).
+
+### Updating UI/marketing copy
+
+All visible UI strings live in `src/i18n/en.json` and `src/i18n/fr.json`. Find the relevant key (namespaces are by component: `Nav.*`, `Footer.*`, `Hero.*`, etc.), edit both files in parallel, and the site updates on HMR.
+
+Interpolation uses i18next's `{{var}}` syntax — e.g. `"copyright": "© {{year}} ..."`.
 
 ---
 
-## Part 2 — Production deployment to Cloudflare Pages
-
-Cloudflare Pages serves the site from their global edge network. The contact API runs on Cloudflare Workers (edge runtime). MDX content is rendered on the edge as well — there is no Node server, no database, no separate API host.
+## Part 2 — Production deployment to Vercel
 
 ### One-time setup
 
-#### Step 1 — Create the Cloudflare Pages project
-
-You can either connect a GitHub repo (recommended — gets you preview deploys per branch and atomic rollbacks) or upload directly via wrangler.
-
-**Option A — GitHub-connected (recommended).**
-
-1. Push this repo to GitHub:
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit — Anchor website"
-   git branch -M main
-   git remote add origin git@github.com:<your-org>/<repo>.git
-   git push -u origin main
-   ```
-2. Sign in to <https://dash.cloudflare.com/> → **Workers & Pages** → **Create application** → **Pages** → **Connect to Git**.
-3. Pick the repo. Cloudflare auto-detects Next.js but **override the build command** to use the `next-on-pages` adapter:
-   - **Framework preset:** `Next.js`
-   - **Build command:** `npm run pages:build`
-   - **Build output directory:** `.vercel/output/static`
-   - **Node version:** `20` (set under **Settings → Environment variables**: `NODE_VERSION=20`)
-4. Click **Save and Deploy**. First build takes ~3–5 minutes.
-
-**Option B — Direct upload via wrangler (no GitHub).**
-
 ```bash
-# Authenticate the CLI (opens browser to Cloudflare)
-npx wrangler login
+# 1. Install the Vercel CLI globally
+npm install -g vercel
 
-# Create the project on first push
-npx wrangler pages project create anchor-website --production-branch main
+# 2. Log in
+vercel login
 
-# Build and deploy
-npm run deploy
+# 3. Link this directory to a Vercel project
+vercel link
+#   → choose "Create a new project" the first time, or pick an existing one.
+#     Framework: Other (Vercel autodetects Vite). Build command: npm run build.
+#     Output directory: dist
 ```
 
-#### Step 2 — Set production environment variables
+After `vercel link`, the project's ID is written to `.vercel/project.json` (gitignored).
 
-In the Cloudflare dashboard → your Pages project → **Settings → Environment variables → Production**:
+### Set production environment variables
 
-| Name | Value | Encrypt? |
-| --- | --- | --- |
-| `RESEND_API_KEY` | Your Resend production key | **Yes** (encrypted) |
-| `CONTACT_TO_EMAIL` | `underwriting@anchorrisktransfer.com` | No |
-| `CONTACT_FROM_EMAIL` | `site@anchorrisktransfer.com` (verified domain sender) | No |
-| `NODE_VERSION` | `20` | No |
+Run each command — `vercel env add` will prompt for the value and which environments to apply it to (production, preview, development):
 
-Save and trigger a redeploy ("Deployments → ... → Retry deployment") so the env vars are picked up.
+```bash
+vercel env add RESEND_API_KEY
+vercel env add CONTACT_TO
+vercel env add CONTACT_FROM
+vercel env add ALLOWED_ORIGIN
+vercel env add VITE_TURNSTILE_SITE_KEY
+vercel env add TURNSTILE_SECRET_KEY
+```
 
-Also set the **Preview** environment vars (often pointing at a separate Resend test key + a personal `CONTACT_TO_EMAIL`) so preview branches don't fire emails to the live underwriting inbox.
+Suggested values:
 
-#### Step 3 — Attach the custom domain
+| Variable | Production value |
+| --- | --- |
+| `CONTACT_TO` | `underwriting@anchorrisktransfer.com` |
+| `CONTACT_FROM` | `Anchor Risk Transfer <site@anchorrisktransfer.com>` |
+| `ALLOWED_ORIGIN` | `https://anchorrisktransfer.com,https://www.anchorrisktransfer.com` |
+| `RESEND_API_KEY` | Server secret from https://resend.com/api-keys |
+| `VITE_TURNSTILE_SITE_KEY` | Site key from Cloudflare Turnstile |
+| `TURNSTILE_SECRET_KEY` | Secret from Cloudflare Turnstile |
 
-In the Pages project → **Custom domains** → **Set up a custom domain** → enter `anchorrisktransfer.com` (and `www.anchorrisktransfer.com`).
+After changing env vars, redeploy to pick them up:
 
-- If the domain is already on Cloudflare DNS, Cloudflare wires up the CNAME automatically.
-- If the domain is elsewhere, follow the prompt to add a CNAME pointing at `<project>.pages.dev`.
-- HTTPS is provisioned automatically (Let's Encrypt via Cloudflare).
+```bash
+vercel deploy --prod
+```
+
+You can also sync the prod env vars down to local for parity:
+
+```bash
+vercel env pull .env.local
+```
+
+### Verify your Resend sender domain
+
+1. https://resend.com/domains → Add Domain → `anchorrisktransfer.com`.
+2. Add the DNS records (SPF, DKIM, DMARC) shown by Resend to your domain registrar.
+3. Wait for verification — usually a few minutes.
+4. Set `CONTACT_FROM` to use an address on that verified domain.
 
 ### Day-to-day deployment
 
-With GitHub-connected:
-
 ```bash
-# Make changes locally, test with npm run dev
-git checkout -b feature/<thing>
-git add .
-git commit -m "Add: ..."
-git push -u origin feature/<thing>
-# → Cloudflare auto-builds a preview deploy at https://<branch>.anchor-website.pages.dev
+# Push a preview deploy (no production traffic yet)
+vercel deploy
 
-# When the preview looks good:
-gh pr create   # or open a PR in the GitHub UI
-# Merge to main → Cloudflare auto-deploys to https://anchorrisktransfer.com
+# Output looks like:
+#   ✅  Production: https://anchor-website-xyz.vercel.app [copied to clipboard] [...]
+
+# When the preview looks good, promote to production
+vercel deploy --prod
+# → https://anchorrisktransfer.com
 ```
 
-Without GitHub (direct from your machine):
+Alternatively, connect the GitHub repo to Vercel and every PR auto-builds a preview URL; merges to `main` auto-deploy to production. This is the recommended setup (Project → Settings → Git → Connect Git Repository).
 
-```bash
-git pull
-npm install        # if dependencies changed
-npm run deploy     # build + push to Cloudflare Pages
-```
+### Attach the custom domain
+
+1. https://vercel.com/[your-team]/anchor-website/settings/domains
+2. Add `anchorrisktransfer.com` and `www.anchorrisktransfer.com`.
+3. Update DNS at your registrar to match the records Vercel shows (typically an `A` record for the apex and a `CNAME` for `www`).
+4. Wait for SSL provisioning (a few minutes).
 
 ### Rollback
 
-If a deploy goes wrong, in the dashboard → **Deployments**, find the last good build and click **Rollback to this deployment**. Takes ~10 seconds.
-
-### Publishing a new blog post
-
 ```bash
-git checkout -b post/<short-slug>
-# Create content/insights/YYYY-MM-<slug>.mdx (see "Authoring a blog post" above)
-git add content/insights/YYYY-MM-<slug>.mdx
-git commit -m "Insight: <title>"
-git push -u origin post/<short-slug>
-# Open PR → review the preview deploy → merge to main
+# List recent production deploys
+vercel ls --prod
+
+# Promote any earlier deploy to production
+vercel promote <deployment-url>
 ```
 
-Cloudflare rebuilds the static blog list and detail pages automatically.
+### Monitor
 
-### Local testing of the edge build (catch Workers-incompatibility before deploy)
-
-```bash
-npm run pages:build    # writes .vercel/output/static
-npm run preview        # runs the edge bundle at http://localhost:8788
-```
-
-Hit every route and submit the contact form. If something works in `npm run dev` but breaks here, it's a Node-only API leaking into the edge bundle — common culprits are `fs`, `process.cwd()` deep paths, or non-edge-compatible libraries. The contact API explicitly declares `export const runtime = 'edge'`; the rest of the site is pure render so it ports cleanly.
-
-### Monitoring
-
-- **Build logs:** Cloudflare Pages dashboard → Deployments → click a deployment → **View build logs**.
-- **Live function logs:** Cloudflare Pages → your project → **Functions → Real-time logs**. This shows `console.log` / `console.error` from the contact API and any runtime errors.
-- **Resend deliverability:** <https://resend.com/emails> — view every sent email, replies, bounces, and complaints.
+- Function logs: https://vercel.com/[your-team]/anchor-website/logs (filter by `/api/contact` to see contact form invocations and Resend errors).
+- Build logs: https://vercel.com/[your-team]/anchor-website/deployments.
 
 ---
 
 ## Project structure
 
 ```
-app/
-├─ layout.tsx                Root layout — Nav, Footer, fonts, brand.css
-├─ page.tsx                  Home
-├─ about/page.tsx
-├─ services/page.tsx
-├─ classes/page.tsx
-├─ capacity/page.tsx
-├─ team/page.tsx
-├─ insights/
-│  ├─ page.tsx               Blog list (featured + recent + archive)
-│  └─ [slug]/page.tsx        MDX article (generateStaticParams from filesystem)
-├─ contact/page.tsx          Contact form on its own route
-├─ api/contact/route.ts      Edge runtime — zod validation, honeypot, Resend
-└─ not-found.tsx             Branded 404
-
-components/
-├─ Nav.tsx                   Sticky utility bar + main nav (client)
-├─ Footer.tsx                Five-column footer
-├─ PageHero.tsx              Inner-page navy hero w/ breadcrumb
-├─ CTAStrip.tsx              Dark CTA band
-├─ ContactForm.tsx           Live form, posts to /api/contact (client)
-├─ ContactSection.tsx        Form + address block wrapper
-├─ home/Hero.tsx             Home full-bleed hero
-└─ sections/
-   ├─ TrustBand.tsx
-   ├─ About.tsx
-   ├─ Services.tsx           Hover-lift cards (client)
-   ├─ Classes.tsx            Hover-scale image cards (client)
-   ├─ Capacity.tsx
-   ├─ Claims.tsx             Four-step timeline
-   ├─ Values.tsx
-   ├─ Team.tsx
-   └─ InsightsTeaser.tsx     Featured + recent — reads MDX
-
-content/insights/             MDX blog posts (frontmatter + body)
-
-lib/
-├─ insights.ts                MDX loader — list + by-slug
-└─ images.ts                  Typed Unsplash URL builder
-
-public/
-├─ fonts/                     EB Garamond + Google Sans TTFs
-└─ brand/                     Anchor logo SVGs
-
-styles/globals.css            CSS vars, @font-face, prose styles, mobile rules
-
-next.config.mjs               MDX, images.unsplash.com allowlist
-tailwind.config.ts            Brand palette + font families
-wrangler.toml                 Cloudflare Pages config
+anchorwebsite/
+├── api/
+│   └── contact.ts                  Vercel Function: Resend + Turnstile + locale-aware email
+├── public/
+│   ├── brand/                      Logo SVGs
+│   └── fonts/                      EB Garamond + Google Sans .ttf files
+├── scripts/
+│   └── postbuild.mjs               Rewrites <html lang="fr"> on dist/fr/*, emits sitemap.xml
+├── src/
+│   ├── main.tsx                    Vite entry — ViteReactSSG({ routes })
+│   ├── App.tsx                     Top-level route: Helmet, Nav, <Outlet/>, Footer, ScrollToTop, LocaleSync
+│   ├── routes.tsx                  EN routes at /, FR routes at /fr/, both share the same Page components
+│   ├── i18n.ts                     i18next init with en/fr JSON dictionaries
+│   ├── styles/globals.css          Design tokens + base reset + typography + component classes
+│   ├── i18n/
+│   │   ├── en.json                 English UI copy
+│   │   └── fr.json                 French UI copy
+│   ├── lib/
+│   │   ├── images.ts               Unsplash image keys
+│   │   ├── insights.ts             Markdown loader via import.meta.glob
+│   │   └── localePath.ts           localePath/stripLocale/isLocale helpers
+│   ├── content/
+│   │   └── insights/*.md           Long-form articles with YAML frontmatter
+│   ├── components/
+│   │   ├── Nav.tsx, Footer.tsx, PageHero.tsx, CTAStrip.tsx, Hero.tsx
+│   │   ├── LocaleLink.tsx          react-router Link that auto-prepends /fr
+│   │   ├── LocaleSwitcher.tsx      EN/FR toggle in the utility bar
+│   │   ├── LocaleSync.tsx          Calls i18n.changeLanguage on route change
+│   │   ├── ScrollToTop.tsx         Resets scroll on navigation
+│   │   ├── ContactForm.tsx         Form + Turnstile widget + POST /api/contact
+│   │   ├── ContactSection.tsx      Wrapper used on home + /contact pages
+│   │   └── sections/               About, Capacity, Claims, Classes, InsightsTeaser, Services, Team, TrustBand, Values
+│   └── pages/
+│       ├── Home.tsx, About.tsx, Services.tsx, Classes.tsx, Capacity.tsx,
+│       ├── Team.tsx, Contact.tsx, Insights.tsx, InsightDetail.tsx, NotFound.tsx
+├── index.html                      Vite HTML entry (Google Fonts preconnect, favicon, OG defaults)
+├── vite.config.ts                  Vite + @vitejs/plugin-react; @/* alias
+├── tsconfig.json                   Bundler-mode TypeScript
+└── package.json                    Scripts: dev / build / preview
 ```
 
-## Brand reference
+---
 
-- **Navy** `#0A2540` (full scale 50–950 in `tailwind.config.ts` and as `--navy-*` CSS variables)
-- **Silver** `#C4C9CF`
-- **Typography**: Google Sans (sans) for headlines and UI · EB Garamond (serif italic) for editorial accents · JetBrains Mono for eyebrows/dates
-- **Tokens**: see `:root` block in `styles/globals.css`
+## Bilingual routing — how it works
 
-## What's not yet built
+- The route tree is declared **once** as `baseChildren` in `src/routes.tsx`, then mounted both at `/` (English) and at `/fr/` (French).
+- `App.tsx` reads the current pathname; if it starts with `/fr`, it calls `i18n.changeLanguage('fr')` synchronously so the first render is in the right language (important for SSG output).
+- Every internal link in the codebase uses `<LocaleLink to="/about">` — it automatically becomes `/about` in English context and `/fr/about` in French context.
+- The EN/FR switcher reads the current path, strips the locale prefix, then navigates to the same logical page under the other locale (so `/services` ↔ `/fr/services`).
+- Pre-rendering produces a separate static HTML file for every (route × locale) combination, each with the correct `<html lang>` attribute and translated copy already baked in.
 
-- The print/PDF **company profile brochure** (`Anchor Company Profile.html` from the design bundle).
-- Newsletter signup integration on the Insights page.
-- Search across insights posts.
-- A non-technical admin UI for blog posts (current model is "edit MDX, open a PR").
+---
 
-Open an issue or talk to the team if you want any of these scoped in.
+## Troubleshooting
+
+- **`vercel dev` says "no .vercel directory"** → run `vercel link` once.
+- **Contact form returns 403 `origin_not_allowed`** → `ALLOWED_ORIGIN` doesn't include the host you're submitting from. Add it (comma-separated).
+- **Contact form returns 500 `server_misconfigured`** → one of `RESEND_API_KEY` / `CONTACT_FROM` / `CONTACT_TO` is missing.
+- **Email arrives but reply-to is wrong** → expected. We set `reply_to` to the visitor's email, so hitting Reply in your inbox goes to them, not back to the site.
+- **Turnstile widget doesn't appear** → `VITE_TURNSTILE_SITE_KEY` is blank or invalid. The form intentionally hides the widget when the site key isn't set (useful for env-less local dev).
+- **French page shows English `<html lang="en">`** → `npm run build` runs `scripts/postbuild.mjs` after Vite which patches this. If you skipped the postbuild step (e.g. ran `vite-react-ssg build` directly), rerun `npm run build` or `node scripts/postbuild.mjs`.
+- **HMR not picking up a new insight** → restart `npm run dev` once. `import.meta.glob` discovers files at module-graph build time.
+
+---
+
+## License
+
+Proprietary — © Anchor Risk Transfer Private Limited.
