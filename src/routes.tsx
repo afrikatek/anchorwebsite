@@ -14,7 +14,12 @@ import { getAllPosts } from './lib/insights';
 
 const insightSlugs = () => getAllPosts().map((p) => p.slug);
 
-const baseChildren: RouteRecord[] = [
+// Factory, not a shared array — React Router v6 data router derives route IDs
+// from object identity + tree position. Reusing the SAME object reference at
+// two tree positions ("/" and "/fr") causes "Found a route id collision on id
+// '0-0'" and the entire React tree fails to mount. Calling this twice yields
+// two distinct sets of route objects, which gives them distinct IDs.
+const buildLocaleChildren = (insightPathPrefix: string): RouteRecord[] => [
   { index: true, Component: Home },
   { path: 'about', Component: About },
   { path: 'services', Component: Services },
@@ -23,6 +28,11 @@ const baseChildren: RouteRecord[] = [
   { path: 'team', Component: Team },
   { path: 'contact', Component: Contact },
   { path: 'insights', Component: Insights },
+  {
+    path: 'insights/:slug',
+    Component: InsightDetail,
+    getStaticPaths: () => insightSlugs().map((slug) => `${insightPathPrefix}/${slug}`),
+  },
 ];
 
 export const routes: RouteRecord[] = [
@@ -30,22 +40,10 @@ export const routes: RouteRecord[] = [
     path: '/',
     Component: App,
     children: [
-      ...baseChildren,
-      {
-        path: 'insights/:slug',
-        Component: InsightDetail,
-        getStaticPaths: () => insightSlugs().map((slug) => `/insights/${slug}`),
-      },
+      ...buildLocaleChildren('/insights'),
       {
         path: 'fr',
-        children: [
-          ...baseChildren,
-          {
-            path: 'insights/:slug',
-            Component: InsightDetail,
-            getStaticPaths: () => insightSlugs().map((slug) => `/fr/insights/${slug}`),
-          },
-        ],
+        children: buildLocaleChildren('/fr/insights'),
       },
       { path: '*', Component: NotFound },
     ],

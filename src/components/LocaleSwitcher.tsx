@@ -3,13 +3,17 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { LOCALES, type Locale, localeFromPathname, localePath, stripLocale } from '@/lib/localePath';
 
 export default function LocaleSwitcher() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const current = localeFromPathname(pathname);
 
   function onSwitch(next: Locale) {
     if (next === current) return;
+    // Flip the language synchronously so every useTranslation subscriber
+    // re-renders in the new locale before the URL change reaches them.
+    // Resources are pre-bundled in src/i18n.ts, so this resolves instantly.
+    void i18n.changeLanguage(next);
     const bare = stripLocale(pathname);
     navigate(localePath(bare, next), { replace: true });
   }

@@ -87,26 +87,169 @@ for path in / /fr /about /fr/about /services /fr/services /contact /fr/contact \
 done
 ```
 
-To test the contact API (must be running via `vercel dev` on `:3000`, not `npm run dev`):
+### Testing the contact form locally
+
+The contact form has two layers — the React form (`src/components/ContactForm.tsx`) and the serverless function (`api/contact.ts`). Each is tested differently.
+
+**Decide which dev server you need**
+
+- **Form rendering + client validation only** → `npm run dev`. The `/contact` page loads. Submitting will fail with a network error because Vite doesn't serve `api/*`.
+- **End-to-end form + Resend email** → `vercel dev`. This boots the Vite frontend AND the `api/contact.ts` function on the same `:3000` port. You can only run one at a time.
 
 ```bash
-# Missing fields → 400 missing_or_invalid_fields
-curl -s -X POST http://localhost:3000/api/contact \
-  -H 'content-type: application/json' \
-  -d '{}'
-
-# Honeypot tripped → 200 silent accept (no email sent)
-curl -s -X POST http://localhost:3000/api/contact \
-  -H 'content-type: application/json' \
-  -d '{"name":"Bot","company":"Acme","email":"a@b.co","classOfBusiness":"Property","message":"hi","website":"http://spam"}'
-
-# Good payload → 200 + email lands at CONTACT_TO
-curl -s -X POST http://localhost:3000/api/contact \
-  -H 'content-type: application/json' \
-  -d '{"name":"You","company":"Acme","email":"you@example.com","classOfBusiness":"Property","message":"Real test","locale":"en"}'
+# Stop any running `npm run dev` first (kill the process).
+vercel dev
+# → first run prompts you to link to a Vercel project; pick `anchor-website`
+# → http://localhost:3000
 ```
 
-> If you set `TURNSTILE_SECRET_KEY` locally, the last call will fail with `turnstile_failed` unless you also include a real `cf-turnstile-response` token. Leave `TURNSTILE_SECRET_KEY` blank in `.env.local` to skip verification during local API testing.
+**One-time `.env.local` setup**
+
+```bash
+cp .env.local.example .env.local
+```
+
+Then fill in *at minimum*:
+
+```bash
+# Required for /api/contact to send mail
+RESEND_API_KEY=re_xxxxxxxxxxxx           # https://resend.com/api-keys
+CONTACT_TO=your-inbox@example.com         # any address you can read while testing
+CONTACT_FROM=Anchor Test <onboarding@resend.dev>   # use resend.dev sandbox sender until your domain is verified
+ALLOWED_ORIGIN=http://localhost:3000     # required, no comma
+
+# Recommended: leave Turnstile blank locally so the form submit isn't gated
+VITE_TURNSTILE_SITE_KEY=
+TURNSTILE_SECRET_KEY=
+```
+
+> The Resend onboarding sender `onboarding@resend.dev` works without any domain verification — use it while you're wiring the form. Switch to `site@anchorrisktransfer.com` only after you've verified `anchorrisktransfer.com` in the Resend dashboard.
+
+**Test the API directly (with `vercel dev` running)**
+
+```bash
+# 1. Missing fields → 400 missing_or_invalid_fields
+curl -i -X POST http://localhost:3000/api/contact \
+  -H 'content-type: application/json' -H 'origin: http://localhost:3000' \
+  -d '{}'
+
+# 2. Honeypot tripped → 200 silent accept (bots don't learn anything)
+curl -i -X POST http://localhost:3000/api/contact \
+  -H 'content-type: application/json' -H 'origin: http://localhost:3000' \
+  -d '{"name":"Bot","company":"Acme","email":"a@b.co","classOfBusiness":"Property","message":"hi","website":"http://spam"}'
+
+# 3. Good payload → 200 ok, email arrives at CONTACT_TO
+curl -i -X POST http://localhost:3000/api/contact \
+  -H 'content-type: application/json' -H 'origin: http://localhost:3000' \
+  -d '{"name":"You","company":"Acme Re","email":"you@example.com","classOfBusiness":"Property","message":"Real local test","locale":"en"}'
+
+# 4. French locale → email subject + body labels in French
+curl -i -X POST http://localhost:3000/api/contact \
+  -H 'content-type: application/json' -H 'origin: http://localhost:3000' \
+  -d '{"name":"Vous","company":"Acme Re","email":"vous@example.com","classOfBusiness":"Property","message":"Test local","locale":"fr"}'
+```
+
+The `-H 'origin: http://localhost:3000'` header matters: the function checks the `Origin` against `ALLOWED_ORIGIN` and returns `403 origin_not_allowed` without it.
+
+**Test the form end-to-end in the browser**
+
+1. `vercel dev` running on `:3000`.
+2. Visit `http://localhost:3000/contact`. Fill in name, company, work email, class, message.
+3. Submit. The button shows "Sending…", then "Thank you — message received." on success.
+4. Check the inbox at `CONTACT_TO` — the email arrives within 1–2 seconds.
+5. Repeat on `/fr/contact` — confirm the email subject is "Nouvelle demande de capacité — …" and the field labels are French.
+
+**Inspecting what the function actually did**
+
+`vercel dev`'s terminal prints every request and any `console.log/error` from `api/contact.ts`. Errors that surface here:
+
+- `RESEND_API_KEY is not configured` — your `.env.local` is missing the key, or `vercel dev` didn't pick it up. Restart `vercel dev`.
+- `Resend failed 422 …` — usually domain not verified. Use `onboarding@resend.dev` as `CONTACT_FROM` until you verify `anchorrisktransfer.com`.
+- `Resend failed 403 …` — the key is for a different team/scope.
+
+> If you set `TURNSTILE_SECRET_KEY` locally, requests fail with `turnstile_failed` unless you include a real `cf-turnstile-response` token. Leave the secret blank locally so the form submit doesn't need a challenge token.
+
+### Debugging the site locally
+
+The site is a Vite + React 19 SPA with `vite-react-ssg` for static prerender. Debugging breaks into three layers — pick the one matching what you're seeing.
+
+**Layer 1: page is blank in the browser**
+
+This is almost always a JavaScript error that crashes the React tree mount. The dev server still returns 200 because Vite serves the SPA shell. To diagnose:
+
+1. Open DevTools (`Cmd+Opt+I` on macOS) → **Console** tab. Look for any red message. The first red line is the bug.
+2. **Look at the Network tab → all** filter. Any 404s on `/src/...` or `/node_modules/.vite/deps/...` mean a module path is wrong.
+3. Open DevTools → **Elements** → inspect `<div id="root">`. If it shows `<!--app-html-->` (a comment, not real DOM), React never mounted. The console error tells you why.
+
+Frequent causes seen on this project:
+- `Found a route id collision on id "0-0"` → `src/routes.tsx` is spreading the same route-objects array twice. Use the `buildLocaleChildren()` factory there, not a shared `const`.
+- `Cannot find module '@/...'` → tsconfig/vite alias broke. Check `vite.config.ts` `resolve.alias` and `tsconfig.json` `paths`.
+- A hook calling `useNavigate`/`useLocation` outside the `<RouterProvider>` tree. Make sure the component is rendered inside `App.tsx`'s `<Outlet/>`.
+
+**Layer 2: page renders but interactions don't work** (links, buttons, locale switcher)
+
+Means React mounted but something is racing or has stale state.
+
+1. DevTools → **Console** while you click. Errors during a click point straight at the handler.
+2. Use **React DevTools** (https://react.dev/link/react-devtools) → Components tab. Click the LocaleSwitcher button — find the `LocaleSwitcher` component in the tree, check its `props`/`state`/`hooks`. If `current` is stuck on `"en"` while URL is `/fr`, the hook isn't seeing the URL change.
+3. In the Console, type `__VITE_REACT_SSG_CONTEXT__` — this is the live data router. `__VITE_REACT_SSG_CONTEXT__.router.state.location.pathname` should match the URL bar.
+
+**Layer 3: production build differs from dev**
+
+```bash
+rm -rf dist && npm run build
+npm run preview
+# → http://localhost:3000 — serves dist/ as static files exactly like Vercel will
+```
+
+If dev works but `npm run preview` doesn't, the bug is in the SSG render path (look at `src/main.tsx`'s setup hook and `scripts/postbuild.mjs`). If `preview` works but the live Vercel deploy doesn't, the bug is in Vercel routing — check `vercel.json` is present at the repo root.
+
+**A reusable headless test**
+
+When you suspect a regression but can't tell what broke, write this once and re-use it. It launches the system Chrome via Playwright, captures every console + page error, and prints a clean diff.
+
+```bash
+npm install --save-dev --no-save playwright-core
+```
+
+Save as `dev-smoke.mjs` at the repo root:
+
+```js
+import { chromium } from 'playwright-core';
+const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+const page = await browser.newPage();
+page.on('pageerror', (e) => console.log('PAGEERROR:', e.message));
+page.on('console', (m) => { if (m.type() === 'error') console.log('console.error:', m.text()); });
+await page.goto('http://localhost:3000', { waitUntil: 'domcontentloaded' });
+await page.waitForSelector('h1', { timeout: 8000 }).catch(() => console.log('no <h1> — React did not mount'));
+const before = await page.locator('h1').first().textContent();
+console.log('EN heading:', before);
+await page.locator('button[aria-label*="French"]').click();
+await page.waitForTimeout(600);
+const after = await page.locator('h1').first().textContent();
+console.log('FR heading:', after);
+console.log('Toggle works:', before !== after);
+await browser.close();
+```
+
+Run with the dev server up:
+
+```bash
+npm run dev &        # in one terminal
+node dev-smoke.mjs   # in another
+```
+
+Any `PAGEERROR` or `console.error` line that prints is the actual cause of whatever you're seeing — much faster than guessing.
+
+**Clearing Vite/HMR caches**
+
+If HMR gets confused (rare, but happens after big route changes):
+
+```bash
+rm -rf node_modules/.vite dist .vite
+npm run dev
+```
 
 ### Build + locally verify the production output
 
@@ -181,6 +324,17 @@ Interpolation uses i18next's `{{var}}` syntax — e.g. `"copyright": "© {{year}
 ---
 
 ## Part 2 — Production deployment to Vercel
+
+The repo includes a small `vercel.json` at the root:
+
+```json
+{
+  "cleanUrls": true,
+  "trailingSlash": false
+}
+```
+
+`cleanUrls: true` tells Vercel to serve `dist/about.html` when the visitor requests `/about` (and `dist/fr/about.html` for `/fr/about`). Without it, Vercel's framework auto-detect can't reliably map the prerendered `*.html` files to clean URLs — every nav click returns a blank/404 page. Leave the file in place.
 
 ### One-time setup
 
